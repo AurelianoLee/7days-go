@@ -21,9 +21,12 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"reflect"
+	"sync"
 
 	"aurerpc/codec"
 )
@@ -75,6 +78,10 @@ func Accept(lis net.Listener) {
 	DefaultServer.Accept(lis)
 }
 
+// ServeConn runs the server on a single connection.
+// ServeConn blocks, serving the connection until the client hangs up.
+// ServeConn 在单个连接上运行服务器
+// ServeConn 阻塞，为连接提供服务直到客户端挂起
 func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 	// 明确表示了对 Close() 返回值的处理方式，同时避免了潜在的编译警告
 	defer func() { _ = conn.Close() }()
@@ -83,4 +90,94 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 		log.Println("rpc server: options error:", err)
 		return
 	}
+
+	if opt.MagicNumber != MagicNumber {
+		log.Printf("rpc server: invalid magic number: %x", opt.MagicNumber)
+		return
+	}
+	f := codec.NewCodecFuncMap[opt.CodecType]
+	if f == nil {
+		log.Printf("rpc server: invalid codec type %s", opt.CodecType)
+		return
+	}
+	// 解析 opt 无误后，
+	server.serveCodec(f(conn))
+}
+
+var invalidRequest = struct{}{}
+
+// 1. handleRequest使用了协程并发请求
+// 2. 处理请求是并发的，但是回复请求的报文必须是逐个发送的，并发容易导致多个回复报文交织在一起，客户端无法解析。在这里使用锁（sending）保证
+// 3. 只有在header解析失败时，才终止循环
+func (server *Server) serveCodec(cc codec.Codec) {
+	sending := new(sync.Mutex) // make sure to send a complete response
+	wg := new(sync.WaitGroup)  // wait until all request are handled
+	// for 无限制地等待请求的到来，直到发生错误（连接被关闭，接收到的报文有问题）
+	for {
+		// 1. 读取请求
+		req, err := server.readRequest(cc)
+		if err != nil {
+			if req == nil {
+				break // it's not possible to recover, so close the connection
+			}
+			req.h.Error = err.Error()
+			// 3. 回复请求
+			server.sendResponse(cc, req.h, invalidRequest, sending)
+			continue
+		}
+		wg.Add(1)
+		// 2. 处理请求
+		go server.handleRequest(cc, req, sending, wg)
+	}
+	wg.Wait()
+	_ = cc.Close()
+}
+
+// request stores all info of a call
+type request struct {
+	h            *codec.Header // header of request
+	argv, replyv reflect.Value // argv and replyv of request
+}
+
+func (server *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
+	var h codec.Header
+	if err := cc.ReadHeader(&h); err != nil {
+		if err != io.EOF && err != io.ErrUnexpectedEOF {
+			log.Println("rpc server: read header error:", err)
+		}
+		return nil, err
+	}
+	return &h, nil
+}
+
+func (server *Server) readRequest(cc codec.Codec) (*request, error) {
+	h, err := server.readRequestHeader(cc)
+	if err != nil {
+		return nil, err
+	}
+	req := &request{h: h}
+	// TODO: now we don't know the type of request argv
+	// day 1: just suppose it's string
+	req.argv = reflect.New(reflect.TypeOf(""))
+	if err = cc.ReadBody(req.argv.Interface()); err != nil {
+		log.Println("rpc server: read requset argv err:", err)
+	}
+	return req, nil
+}
+
+func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body any, sending *sync.Mutex) {
+	sending.Lock()
+	defer sending.Unlock()
+	if err := cc.Write(h, body); err != nil {
+		log.Println("rpc server: write response error:", err)
+	}
+}
+
+func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup) {
+	// todo: should call registered rpc methods to get the right replyv
+	// day 1: just print argv and send hello message
+	defer wg.Done()
+	log.Println(req.h, req.argv.Elem())
+	req.replyv = reflect.ValueOf(fmt.Sprintf("aurerpc resp %d", req.h.Seq))
+	server.sendResponse(cc, req.h, req.replyv.Interface(), sending)
 }
