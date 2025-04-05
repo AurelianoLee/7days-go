@@ -27,6 +27,8 @@ func main() {
 	go startServer(addr)
 
 	// in fact, following code is like a simple aurerpc client
+	// 模拟了一个客户端与服务端的连接，等待服务器启动并获取服务器的地址
+	// 这个连接是一个 IO 操作
 	conn, _ := net.Dial("tcp", <-addr)
 	defer func() { _ = conn.Close() }()
 
