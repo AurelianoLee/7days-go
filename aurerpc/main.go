@@ -1,13 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 
-	"aurerpc/codec"
+	"aurerpc/client"
 	"aurerpc/server"
 )
 
@@ -23,29 +23,34 @@ func startServer(addr chan string) {
 }
 
 func main() {
+	log.SetFlags(0)
 	addr := make(chan string)
 	go startServer(addr)
+
+	// 一个客户端与服务端的连接，等待服务器启动并获取服务器的地址
+	client, _ := client.Dial("tcp", <-addr)
+	defer func() { _ = client.Close() }()
 
 	// in fact, following code is like a simple aurerpc client
 	// 模拟了一个客户端与服务端的连接，等待服务器启动并获取服务器的地址
 	// 这个连接是一个 IO 操作
-	conn, _ := net.Dial("tcp", <-addr)
-	defer func() { _ = conn.Close() }()
+	// conn, _ := net.Dial("tcp", <-addr)
+	// defer func() { _ = conn.Close() }()
 
 	time.Sleep(time.Second)
-	// send options
-	_ = json.NewEncoder(conn).Encode(server.DefaultOption)
-	cc := codec.NewGobCodec(conn)
+	var wg sync.WaitGroup
 	// send request & receive response
 	for i := range 5 {
-		h := &codec.Header{
-			ServiceMethod: "Foo.Sum",
-			Seq:           uint64(i),
-		}
-		_ = cc.Write(h, fmt.Sprintf("aurerpc req %d", h.Seq))
-		_ = cc.ReadHeader(h)
-		var reply string
-		_ = cc.ReadBody(&reply)
-		log.Printf("aurerpc reply: %s", reply)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			args := fmt.Sprintf("aurerpc req %d", i)
+			var reply string
+			if err := client.Call("Foo.Sum", args, &reply); err != nil {
+				log.Fatal("call Foo.Sum error:", err)
+			}
+			log.Println("call Foo.Sum reply:", reply)
+		}(i)
 	}
+	wg.Wait()
 }

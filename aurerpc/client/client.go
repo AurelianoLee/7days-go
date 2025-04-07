@@ -1,9 +1,12 @@
 package client
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"sync"
 
 	"aurerpc/codec"
@@ -132,4 +135,133 @@ func (client *Client) receive() {
 	}
 	// if error occurs, terminateCalls pending calls
 	client.terminateCalls(err)
+}
+
+// NewClient 创建 Client 实例
+func NewClient(conn net.Conn, opt *server.Option) (*Client, error) {
+	// 根据 opt 选择对应的解码器
+	f := codec.NewCodecFuncMap[opt.CodecType]
+	if f == nil {
+		err := fmt.Errorf("invalid codec type %s", opt.CodecType)
+		log.Println("rpc client: codec error:", err)
+		return nil, err
+	}
+	// send options with server
+	// conn表示一个客户端和服务端的连接
+	// 创建一个写入conn的编码器，opt是客户端在连接RPC时希望使用的配置
+	if err := json.NewEncoder(conn).Encode(opt); err != nil {
+		log.Println("rpc client: options error:", err)
+		_ = conn.Close()
+		return nil, err
+	}
+	return newClientCodec(f(conn), opt), nil
+}
+
+func newClientCodec(cc codec.Codec, opt *server.Option) *Client {
+	client := &Client{
+		cc:      cc,
+		opt:     opt,
+		seq:     1, // starts with 1, 0 means invalid call.
+		pending: make(map[uint64]*Call),
+	}
+	go client.receive()
+	return client
+}
+
+func parseOptions(opts ...*server.Option) (*server.Option, error) {
+	// if opts is nil or pass nil as parameter
+	if len(opts) == 0 || opts[0] == nil {
+		return server.DefaultOption, nil
+	}
+	if len(opts) != 1 {
+		return nil, errors.New("number of options is more than 1")
+	}
+	opt := opts[0]
+	opt.MagicNumber = server.DefaultOption.MagicNumber
+	if opt.CodecType == "" {
+		opt.CodecType = server.DefaultOption.CodecType
+	}
+	return opt, nil
+}
+
+// Dial connects to an RPC server at the specified network address
+func Dial(network, address string, opts ...*server.Option) (client *Client, err error) {
+	opt, err := parseOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.Dial(network, address)
+	if err != nil {
+		return nil, err
+	}
+	// close the connection if client is nil
+	defer func() {
+		if client == nil {
+			_ = conn.Close()
+		}
+	}()
+	return NewClient(conn, opt)
+}
+
+func (client *Client) send(call *Call) {
+	// make sure that the client will send a complete request
+	client.sending.Lock()
+	defer client.sending.Unlock()
+
+	// register this call.
+	seq, err := client.registerCall(call)
+	if err != nil {
+		call.Error = err
+		call.done()
+		return
+	}
+
+	// prepare request header
+	client.header.ServiceMethod = call.ServiceMethod
+	client.header.Seq = seq
+	client.header.Error = ""
+
+	// encode and send the request
+	if err := client.cc.Write(&client.header, call.Args); err != nil {
+		call := client.removeCall(seq)
+		// call may be nil, it usually means that Write partially failed,
+		// client has received the response and handled
+		if call != nil {
+			call.Error = err
+			call.done()
+		}
+	}
+}
+
+// Go 和 Call 是客户端暴露给用户的两个 RPC 服务调用接口
+// Go 是异步调用，而 Call 是同步调用
+// Call 是对 Go 的封装，阻塞 call.Done，等待响应返回
+// Go invokes the function asynchronously
+// It returns the Call structure representing the invocation.
+// The done channel will signal when the call is complete by returning the same Call object.
+// If done is nil, Go will allocate a new channel.
+// If non-nil, done must be buffered or Go will deliberately crash.
+func (client *Client) Go(serviceMethod string, args, reply any, done chan *Call) *Call {
+	if done == nil {
+		done = make(chan *Call, 10)
+	} else if cap(done) == 0 {
+		log.Panic("rpc client: done channel is unbuffered")
+	}
+	call := &Call{
+		ServiceMethod: serviceMethod,
+		Args:          args,
+		Reply:         reply,
+		Done:          done,
+	}
+	client.send(call)
+	return call
+}
+
+// Call invokes the named function, waits for it to complete,
+// and returns its error status.
+// The done channel will signal when the call is complete
+// by returning the same Call object.
+func (client *Client) Call(serviceMethod string, args, reply any) error {
+	call := <-client.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
+	return call.Error
 }
