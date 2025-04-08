@@ -21,11 +21,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"reflect"
+	"strings"
 	"sync"
 
 	"aurerpc/codec"
@@ -44,7 +46,9 @@ var DefaultOption = &Option{
 }
 
 // Server represents a server.
-type Server struct{}
+type Server struct {
+	serviceMap sync.Map
+}
 
 // NewServer returns a new Server.
 func NewServer() *Server {
@@ -107,7 +111,8 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 var invalidRequest = struct{}{}
 
 // 1. handleRequest使用了协程并发请求
-// 2. 处理请求是并发的，但是回复请求的报文必须是逐个发送的，并发容易导致多个回复报文交织在一起，客户端无法解析。在这里使用锁（sending）保证
+// 2. 处理请求是并发的，但是回复请求的报文必须是逐个发送的，并发容易导致多个回复报文交织在一起，
+// 客户端无法解析。在这里使用锁（sending）保证
 // 3. 只有在header解析失败时，才终止循环
 func (server *Server) serveCodec(cc codec.Codec) {
 	sending := new(sync.Mutex) // make sure to send a complete response
@@ -137,6 +142,8 @@ func (server *Server) serveCodec(cc codec.Codec) {
 type request struct {
 	h            *codec.Header // header of request
 	argv, replyv reflect.Value // argv and replyv of request
+	mtype        *methodType
+	svc          *service
 }
 
 func (server *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
@@ -156,11 +163,22 @@ func (server *Server) readRequest(cc codec.Codec) (*request, error) {
 		return nil, err
 	}
 	req := &request{h: h}
-	// TODO: now we don't know the type of request argv
-	// day 1: just suppose it's string
-	req.argv = reflect.New(reflect.TypeOf(""))
-	if err = cc.ReadBody(req.argv.Interface()); err != nil {
-		log.Println("rpc server: read requset argv err:", err)
+	req.svc, req.mtype, err = server.findService(h.ServiceMethod)
+	if err != nil {
+		return req, err
+	}
+	req.argv = req.mtype.newArgv()
+	req.replyv = req.mtype.newReplyv()
+
+	// make sure that argvi is a pointer, ReadBody need a pointer as parameter
+	argvi := req.argv.Interface()
+	if req.argv.Type().Kind() != reflect.Ptr {
+		argvi = req.argv.Addr().Interface()
+	}
+	// newArgv 只是创建了一个空的容器，定义了参数的结构
+	// 真正的数据填充是由 ReadBody 方法完成的，而 ReadBody 的数据来源是网络连接 conn
+	if err = cc.ReadBody(argvi); err != nil {
+		log.Println("rpc server: read request argv err:", err)
 	}
 	return req, nil
 }
@@ -174,10 +192,50 @@ func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body any, se
 }
 
 func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup) {
-	// todo: should call registered rpc methods to get the right replyv
-	// day 1: just print argv and send hello message
 	defer wg.Done()
-	log.Println(req.h, req.argv.Elem())
-	req.replyv = reflect.ValueOf(fmt.Sprintf("aurerpc resp %d", req.h.Seq))
+	err := req.svc.call(req.mtype, req.argv, req.replyv)
+	if err != nil {
+		req.h.Error = err.Error()
+		server.sendResponse(cc, req.h, invalidRequest, sending)
+		return
+	}
 	server.sendResponse(cc, req.h, req.replyv.Interface(), sending)
+}
+
+// Register published in the server the set of methods
+func (server *Server) Register(rcvr any) error {
+	s := newService(rcvr)
+	if _, dup := server.serviceMap.LoadOrStore(s.name, s); dup {
+		return fmt.Errorf("rpc: service already defined: %s", s.name)
+	}
+	return nil
+}
+
+// Register publishes the receiver's methods in the DefaultServer.
+func Register(rcvr any) error {
+	return DefaultServer.Register(rcvr)
+}
+
+// findService 通过 serviceMethod 从 serviceMap 中找到对应的 service
+func (server *Server) findService(serviceMethod string) (svc *service, mType *methodType, err error) {
+	// 分割服务名和方法名
+	dot := strings.LastIndex(serviceMethod, ".")
+	if dot < 0 {
+		err = errors.New("rpc server: service/method request ill-formed: " + serviceMethod)
+		return
+	}
+	serviceName, methodName := serviceMethod[:dot], serviceMethod[dot+1:]
+
+	// 先在 serviceMap 中找到对应的 service 实例，再从 service 实例的 method 中，找到对应的 methodType
+	svci, ok := server.serviceMap.Load(serviceName)
+	if !ok {
+		err = errors.New("rpc server: can't find service " + serviceName)
+		return
+	}
+	svc = svci.(*service)
+	mType = svc.method[methodName]
+	if mType == nil {
+		err = errors.New("rpc server: can't find method " + methodName)
+	}
+	return
 }
