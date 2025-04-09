@@ -36,6 +36,12 @@ func NewGobCodec(conn io.ReadWriteCloser) Codec {
 	}
 }
 
+// Problem: 在运行 client_test 中 TestClientCall 时，测试可能会在 ReadHeader 卡死
+// 最有可能的原因是因为粘包，导致在服务端使用 json Encoder 吞掉部分 Header，导致发生错误
+//
+// Solution:
+// 1. 两次握手，在服务端收到这个 opt 后，将这个 opt 发送给客户端验证
+// 2. 确定 opt 长度，在发送 opt 之前，发送 opt 的 len
 func (c *GobCodec) ReadHeader(h *Header) error {
 	return c.dec.Decode(h)
 }

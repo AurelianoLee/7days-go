@@ -29,20 +29,27 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"aurerpc/codec"
 )
 
 const MagicNumber = 0x3bef5c
 
+// RPC 连接建立时确定是否是对应的RPC协议，编码方式，超时时间
 type Option struct {
 	MagicNumber int        // MagicNumber marks this is aureRPC request
 	CodecType   codec.Type // client choose which codec to use
+
+	// add timeout handle
+	ConnectTimeout time.Duration // 0 means no limit
+	HandleTimeout  time.Duration
 }
 
 var DefaultOption = &Option{
-	MagicNumber: MagicNumber,
-	CodecType:   codec.GobType,
+	MagicNumber:    MagicNumber,
+	CodecType:      codec.GobType,
+	ConnectTimeout: time.Second * 10,
 }
 
 // Server represents a server.
@@ -91,7 +98,7 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 	defer func() { _ = conn.Close() }()
 	var opt Option
 	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
-		log.Println("rpc server: options error:", err)
+		log.Println("rpc server: receive options error:", err)
 		return
 	}
 
@@ -104,8 +111,13 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 		log.Printf("rpc server: invalid codec type %s", opt.CodecType)
 		return
 	}
+	// 第二次握手
+	if err := json.NewEncoder(conn).Encode(&opt); err != nil {
+		log.Println("rpc server: send options error: ", err)
+		return
+	}
 	// 解析 opt 无误后，
-	server.serveCodec(f(conn))
+	server.serveCodec(f(conn), &opt)
 }
 
 var invalidRequest = struct{}{}
@@ -114,7 +126,7 @@ var invalidRequest = struct{}{}
 // 2. 处理请求是并发的，但是回复请求的报文必须是逐个发送的，并发容易导致多个回复报文交织在一起，
 // 客户端无法解析。在这里使用锁（sending）保证
 // 3. 只有在header解析失败时，才终止循环
-func (server *Server) serveCodec(cc codec.Codec) {
+func (server *Server) serveCodec(cc codec.Codec, opts *Option) {
 	sending := new(sync.Mutex) // make sure to send a complete response
 	wg := new(sync.WaitGroup)  // wait until all request are handled
 	// for 无限制地等待请求的到来，直到发生错误（连接被关闭，接收到的报文有问题）
@@ -132,7 +144,7 @@ func (server *Server) serveCodec(cc codec.Codec) {
 		}
 		wg.Add(1)
 		// 2. 处理请求
-		go server.handleRequest(cc, req, sending, wg)
+		go server.handleRequest(cc, req, sending, wg, opts.HandleTimeout)
 	}
 	wg.Wait()
 	_ = cc.Close()
@@ -191,15 +203,38 @@ func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body any, se
 	}
 }
 
-func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup) {
+func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex,
+	wg *sync.WaitGroup, timeout time.Duration) {
 	defer wg.Done()
-	err := req.svc.call(req.mtype, req.argv, req.replyv)
-	if err != nil {
-		req.h.Error = err.Error()
-		server.sendResponse(cc, req.h, invalidRequest, sending)
+	called := make(chan struct{})
+	sent := make(chan struct{})
+	go func() {
+		err := req.svc.call(req.mtype, req.argv, req.replyv)
+		called <- struct{}{}
+		if err != nil {
+			req.h.Error = err.Error()
+			server.sendResponse(cc, req.h, invalidRequest, sending)
+			sent <- struct{}{}
+			return
+		}
+		server.sendResponse(cc, req.h, req.replyv.Interface(), sending)
+		sent <- struct{}{}
+	}()
+
+	if timeout == 0 {
+		<-called
+		<-sent
 		return
 	}
-	server.sendResponse(cc, req.h, req.replyv.Interface(), sending)
+
+	select {
+	case <-time.After(timeout):
+		// TODO: 超时的情况下，上面新开的协程如果继续写入了called和sent，会导致这两个channel阻塞
+		req.h.Error = fmt.Sprintf("rpc server: request handle timeout: expect within %s", timeout)
+		server.sendResponse(cc, req.h, invalidRequest, sending)
+	case <-called:
+		<-sent
+	}
 }
 
 // Register published in the server the set of methods
