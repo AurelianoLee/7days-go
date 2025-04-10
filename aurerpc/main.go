@@ -23,6 +23,13 @@ func (f Foo) Sum(args Args, reply *int) error {
 	return nil
 }
 
+// For testing xclient timeout
+func (f Foo) Sleep(args Args, reply *int) error {
+	time.Sleep(time.Second * time.Duration(args.Num1))
+	*reply = args.Num1 + args.Num2
+	return nil
+}
+
 func startServer(addr chan string) {
 	var foo Foo
 	if err := server.Register(&foo); err != nil {
@@ -109,4 +116,20 @@ func main() {
 	// go startServer(addr)
 	go callFromHTTPClient(addr)
 	startHTTPServer(addr)
+}
+
+func foo(ctx context.Context, xc *client.XClient, typ, serviceMethod string, args *Args) {
+	var reply int
+	var err error
+	switch typ {
+	case "call":
+		err = xc.Call(ctx, serviceMethod, args, &reply)
+	case "broadcast":
+		err = xc.Broadcast(ctx, serviceMethod, args, &reply)
+	}
+	if err != nil {
+		log.Printf("%s %s error: %v", typ, serviceMethod, err)
+	} else {
+		log.Printf("%s %s success: %d + %d = %d", typ, serviceMethod, args.Num1, args.Num2, reply)
+	}
 }
