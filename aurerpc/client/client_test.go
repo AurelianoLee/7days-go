@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -75,4 +77,32 @@ func TestClientCall(t *testing.T) {
 		err := client.Call(context.Background(), "Bar.Timeout", 1, &reply)
 		_assert(err != nil && strings.Contains(err.Error(), "handle timeout"), "expect a timeout error")
 	})
+}
+
+func TestXDial(t *testing.T) {
+	t.Logf("\nruntime.GOOS is %s\n", runtime.GOOS)
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		ch := make(chan struct{})
+		errChan := make(chan error, 1)
+		addr := "/tmp/aurerpc.sock"
+		go func() {
+			_ = os.Remove(addr)
+			l, err := net.Listen("unix", addr)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			ch <- struct{}{}
+			server.Accept(l)
+		}()
+
+		select {
+		case <-ch:
+			_, err := XDial("unix@" + addr)
+			_assert(err == nil, "failed to connect unix socket")
+			t.Log("\nconnect successfully")
+		case <-errChan:
+			t.Fatal("failed to listen unix socket")
+		}
+	}
 }

@@ -8,19 +8,19 @@ import (
 )
 
 // 方法
-type methodType struct {
+type MethodType struct {
 	method    reflect.Method // 方法本身
 	ArgType   reflect.Type   // 第一个参数类型
 	ReplyType reflect.Type   // 第二个参数类型
 	numCalls  uint64         // 后续统计方法调用次数
 }
 
-func (m *methodType) NumCalls() uint64 {
+func (m *MethodType) NumCalls() uint64 {
 	// 用以原子操作的方式安全地读取值，避免了显示加锁的性能开销
 	return atomic.LoadUint64(&m.numCalls)
 }
 
-func (m *methodType) newArgv() reflect.Value {
+func (m *MethodType) newArgv() reflect.Value {
 	var argv reflect.Value
 	// reflect.Elem() 获取一个指针类型的值所指向的具体类型
 	// reflect.New() 创建一个指向该类型的指针 reflect.Value
@@ -38,7 +38,7 @@ func (m *methodType) newArgv() reflect.Value {
 }
 
 // newReplyv 用于为RPC方法的返回值创建一个合适的初始值
-func (m *methodType) newReplyv() reflect.Value {
+func (m *MethodType) newReplyv() reflect.Value {
 	// reply must be a pointer type
 	replyv := reflect.New(m.ReplyType.Elem())
 	// 根据具体类型的初始化
@@ -58,7 +58,7 @@ type service struct {
 	name   string                 // 映射的结构体的名称
 	typ    reflect.Type           // 结构体的类型
 	rcvr   reflect.Value          // 在调用时需要rcvr作为第0个参数
-	method map[string]*methodType // 存储映射的结构体的所有符合条件的方法
+	method map[string]*MethodType // 存储映射的结构体的所有符合条件的方法
 }
 
 // newService 构造函数，根据入参的结构体实例创建对应的服务
@@ -81,7 +81,7 @@ func newService(rcvr any) *service {
 
 // registerMethods 注册结构体中符合条件的方法
 func (s *service) registerMethods() {
-	s.method = make(map[string]*methodType)
+	s.method = make(map[string]*MethodType)
 	for i := 0; i < s.typ.NumMethod(); i++ {
 		method := s.typ.Method(i)
 		mType := method.Type
@@ -97,7 +97,7 @@ func (s *service) registerMethods() {
 		if !isExportedOrBuiltinType(argType) || !isExportedOrBuiltinType(replyType) {
 			continue
 		}
-		s.method[method.Name] = &methodType{
+		s.method[method.Name] = &MethodType{
 			method:    method,
 			ArgType:   argType,
 			ReplyType: replyType,
@@ -111,7 +111,7 @@ func isExportedOrBuiltinType(t reflect.Type) bool {
 	return ast.IsExported(t.Name()) || t.PkgPath() == ""
 }
 
-func (s *service) call(m *methodType, argv, replyv reflect.Value) error {
+func (s *service) call(m *MethodType, argv, replyv reflect.Value) error {
 	atomic.AddUint64(&m.numCalls, 1)
 	f := m.method.Func
 	returnValues := f.Call([]reflect.Value{s.rcvr, argv, replyv})

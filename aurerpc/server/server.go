@@ -26,12 +26,14 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"aurerpc/codec"
+	"aurerpc/constants"
 )
 
 const MagicNumber = 0x3bef5c
@@ -154,7 +156,7 @@ func (server *Server) serveCodec(cc codec.Codec, opts *Option) {
 type request struct {
 	h            *codec.Header // header of request
 	argv, replyv reflect.Value // argv and replyv of request
-	mtype        *methodType
+	mtype        *MethodType
 	svc          *service
 }
 
@@ -252,7 +254,7 @@ func Register(rcvr any) error {
 }
 
 // findService 通过 serviceMethod 从 serviceMap 中找到对应的 service
-func (server *Server) findService(serviceMethod string) (svc *service, mType *methodType, err error) {
+func (server *Server) findService(serviceMethod string) (svc *service, mType *MethodType, err error) {
 	// 分割服务名和方法名
 	dot := strings.LastIndex(serviceMethod, ".")
 	if dot < 0 {
@@ -273,4 +275,40 @@ func (server *Server) findService(serviceMethod string) (svc *service, mType *me
 		err = errors.New("rpc server: can't find method " + methodName)
 	}
 	return
+}
+
+// ----------------------- HTTP --------------------------------
+
+// ServeHTTP implements an http.Handler that answers RPC requests.
+func (server *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "CONNECT" {
+		// 设置响应头
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, "405 must CONNECT\n")
+		return
+	}
+	// 劫持 HTTP 连接
+	// 1. 使用类型断言将 w 转换为 http.Hijack 类型
+	// 2. 调用 Hijack 方法劫持当前的 HTTP 连接
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		log.Println("rpc hijacking ", req.RemoteAddr, ": ", err.Error())
+		return
+	}
+	// 自定义响应：通知客户端连接已成功升级
+	// 客户端收到该响应后，可以切换到自定义的 RPC 协议进行通信
+	_, _ = io.WriteString(conn, "HTTP/1.0 "+constants.Connected+"\n\n")
+	server.ServeConn(conn)
+}
+
+// HandleHTTP registers an HTTP handler for RPC messages on rpcPath.
+// It is still necessary to invoke http.Serve(), typically in a go statement.
+func (server *Server) HandleHTTP() {
+	http.Handle(constants.DefaultRPCPath, server)
+}
+
+// HandleHTTP is a convenient approach for default server to register HTTP handlers.
+func HandleHTTP() {
+	DefaultServer.HandleHTTP()
 }
