@@ -85,11 +85,11 @@ func (xc *XClient) dial(rpcAddr string) (*Client, error) {
 }
 
 func (xc *XClient) call(ctx context.Context, rpcAddr, serviceMethod string, args, reply any) error {
-	client, err := xc.dial(rpcAddr)
+	rpcClient, err := xc.dial(rpcAddr)
 	if err != nil {
 		return err
 	}
-	return client.Call(ctx, serviceMethod, args, reply)
+	return rpcClient.Call(ctx, serviceMethod, args, reply)
 }
 
 // 负载均衡的请求分发方式
@@ -97,11 +97,11 @@ func (xc *XClient) call(ctx context.Context, rpcAddr, serviceMethod string, args
 // Call 调用指定函数，等待其完成，并返回其错误状态。
 // xc 将选择合适的服务器。
 func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply any) error {
-	rpcAddr, err := xc.d.Get(xc.mode)
+	serverAddr, err := xc.d.Get(xc.mode)
 	if err != nil {
 		return err
 	}
-	return xc.call(ctx, rpcAddr, serviceMethod, args, reply)
+	return xc.call(ctx, serverAddr, serviceMethod, args, reply)
 }
 
 // 广播：将请求发送到所有服务实例，并等待所有实例的响应。适用于需要确保所有实例处理请求的场景。

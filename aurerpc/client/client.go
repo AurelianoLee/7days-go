@@ -370,6 +370,7 @@ func DialHTTP(network, address string, opts ...*server.Option) (*Client, error) 
 // according the first parameter rpcAddr.
 // rpcAddr is a general format (protocol@addr) to represent a rpc server
 // eg, http@10.0.0.1:7001, tcp@10.0.0.1:9999, unix@/tmp/aurerpc.sock
+//
 // rpcAddr 表明 Client 用什么协议和地址去连接 Server
 func XDial(rpcAddr string, opts ...*server.Option) (*Client, error) {
 	parts := strings.Split(rpcAddr, "@")

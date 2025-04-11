@@ -164,7 +164,7 @@ func (server *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
 	var h codec.Header
 	if err := cc.ReadHeader(&h); err != nil {
 		if err != io.EOF && err != io.ErrUnexpectedEOF {
-			log.Println("rpc server: read header error:", err)
+			log.Printf("rpc server: read header error: %s, and header is %v", err, h)
 		}
 		return nil, err
 	}
