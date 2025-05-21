@@ -33,10 +33,11 @@ func (f Foo) Sleep(args Args, reply *int) error {
 	return nil
 }
 
-func startServer(addr chan string) {
+func startDefaultServer(addr chan string) {
 	var foo Foo
-	rpcServer := server.NewServer()
-	if err := rpcServer.Register(&foo); err != nil {
+	// FIXME:
+	// rpcServer := server.NewServer()
+	if err := server.Register(&foo); err != nil {
 		log.Fatal("register error: ", err)
 	}
 	// pick a free port
@@ -58,11 +59,31 @@ func startHTTPServer(addrCh chan string) {
 	_ = http.Serve(l, nil)
 }
 
+func startServer(addr chan string) {
+	var foo Foo
+	rpcServer := server.NewServer()
+	if err := rpcServer.Register(&foo); err != nil {
+		log.Fatal("register error: ", err)
+	}
+	// pick a free port
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		log.Fatal("network error:", err)
+	}
+	log.Println("start rpc server on", l.Addr())
+	addr <- l.Addr().String()
+	// Note: this is new server, not default server
+	rpcServer.Accept(l)
+}
+
 // ------------------------------ main --------------------------------
 func main() {
 	log.SetFlags(0)
 
-	// go startServer(addr)
+	// start a basic server and client
+	// addr := make(chan string)
+	// go startDefaultServer(addr)
+	// call(addr)
 
 	// start http server and client
 	// {
