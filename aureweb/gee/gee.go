@@ -2,8 +2,10 @@ package gee
 
 import "net/http"
 
+// 定义了类型 HandlerFunc，这是提供给框架用户的，用来定义路由映射的处理方法
 type HandlerFunc func(http.ResponseWriter, *http.Request)
 
+// 实现了路由映射表，提供了用户注册路由到映射表 Router 的方法，包装了启动服务的函数
 type Engine struct {
 	router map[string]HandlerFunc
 }
@@ -34,7 +36,6 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if handler, ok := engine.router[key]; ok {
 		handler(w, req)
 	} else {
-		w.WriteHeader(http.StatusNotFound)
-		http.NotFound(w, req)
+		http.NotFound(w, req) // include w.WriteHeader(404)
 	}
 }
