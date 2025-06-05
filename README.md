@@ -1,5 +1,7 @@
-# 项目列表
+# Projects
 
-[简单的RPC](./aurerpc/README.md)
+[Simple RPC](./aurerpc/README.md)
 
-[简单的Web框架](./aureweb/README.md)
+[Simple Web Frame](./aureweb/README.md)
+
+Forked from [Geektutu 7days-golangs](https://github.com/geektutu/7days-golang)
