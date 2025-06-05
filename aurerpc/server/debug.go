@@ -67,7 +67,7 @@ func (server *Server) HandleHTTPDebug() {
 	http.Handle(constants.DefaultRPCPath, server)
 	// 注册路由处理调试请求
 	http.Handle(constants.DefaultDebugPath, debugHTTP{server})
-	log.Println("rpc server debug path:", constants.DefaultDebugPath)
+	log.Println("[RPC server] debug path:", constants.DefaultDebugPath)
 }
 
 func HandleHTTPDebug() {

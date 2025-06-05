@@ -73,7 +73,7 @@ func newService(rcvr any) *service {
 	s.name = reflect.Indirect(s.rcvr).Type().Name()
 	s.typ = reflect.TypeOf(rcvr)
 	if !ast.IsExported(s.name) {
-		log.Fatalf("rpc server: %s is not a valid service name", s.name)
+		log.Fatalf("[RPC server]: %s is not a valid service name", s.name)
 	}
 	s.registerMethods()
 	return s
@@ -102,7 +102,7 @@ func (s *service) registerMethods() {
 			ArgType:   argType,
 			ReplyType: replyType,
 		}
-		log.Printf("rpc server: register %s.%s\n", s.name, method.Name)
+		log.Printf("[RPC server]: register %s.%s\n", s.name, method.Name)
 	}
 }
 

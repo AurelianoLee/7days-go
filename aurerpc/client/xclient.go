@@ -137,7 +137,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 			if reply != nil {
 				clonedReply = reflect.New(reflect.ValueOf(reply).Elem().Type()).Interface()
 			}
-			err := xc.call(ctx, rpcAddr, serviceMethod, args, reply)
+			err := xc.call(ctx, rpcAddr, serviceMethod, args, clonedReply)
 			mu.Lock()
 			if err != nil && e == nil {
 				e = err
@@ -145,6 +145,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 			}
 			if err == nil && !replyDone {
 				reflect.ValueOf(reply).Elem().Set(reflect.ValueOf(clonedReply).Elem())
+				replyDone = true // 只需要设置一次 reply
 			}
 			mu.Unlock()
 		}(rpcAddr)

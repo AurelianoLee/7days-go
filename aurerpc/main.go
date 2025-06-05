@@ -10,6 +10,7 @@ import (
 
 	"aurerpc/client"
 	"aurerpc/discovery"
+	"aurerpc/register"
 	"aurerpc/server"
 )
 
@@ -45,7 +46,7 @@ func startDefaultServer(addr chan string) {
 	if err != nil {
 		log.Fatal("network error:", err)
 	}
-	log.Println("start rpc server on", l.Addr())
+	log.Println("start [RPC server] on", l.Addr())
 	addr <- l.Addr().String()
 	server.Accept(l)
 }
@@ -70,8 +71,31 @@ func startServer(addr chan string) {
 	if err != nil {
 		log.Fatal("network error:", err)
 	}
-	log.Println("start rpc server on", l.Addr())
+	log.Println("start [RPC server] on", l.Addr())
 	addr <- l.Addr().String()
+	// Note: this is new server, not default server
+	rpcServer.Accept(l)
+}
+
+func startRegistry(wg *sync.WaitGroup) {
+	l, _ := net.Listen("tcp", ":9999")
+	register.HandleHTTP()
+	wg.Done()
+	log.Println("start registry server on", l.Addr())
+	if err := http.Serve(l, nil); err != nil {
+		log.Fatal("registry server error:", err)
+	}
+}
+
+func startServerWithRegistry(registryAddr string, wg *sync.WaitGroup) {
+	var foo Foo
+	l, _ := net.Listen("tcp", ":0")
+	rpcServer := server.NewServer()
+	_ = rpcServer.Register(&foo)
+	// register server to registry
+	// 服务端向注册中心注册
+	register.Heartbeat(registryAddr, "tcp@"+l.Addr().String(), 0)
+	wg.Done()
 	// Note: this is new server, not default server
 	rpcServer.Accept(l)
 }
@@ -93,19 +117,38 @@ func main() {
 	// }
 
 	// start a load balance client and server
-	{
-		ch1 := make(chan string)
-		ch2 := make(chan string)
-		// start two server
-		go startServer(ch1)
-		go startServer(ch2)
+	// {
+	// 	ch1 := make(chan string)
+	// 	ch2 := make(chan string)
+	// 	// start two server
+	// 	go startServer(ch1)
+	// 	go startServer(ch2)
 
-		addr1 := <-ch1
-		addr2 := <-ch2
+	// 	addr1 := <-ch1
+	// 	addr2 := <-ch2
+
+	// 	time.Sleep(time.Second)
+	// 	callForLoadBalance(addr1, addr2)
+	// 	broadcastForLoadBalance(addr1, addr2)
+	// }
+
+	// start a load balance client and server with registry
+	{
+		registryAddr := "http://localhost:9999/_aurerpc_/registry"
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		go startRegistry(wg)
+		wg.Wait()
 
 		time.Sleep(time.Second)
-		callForLoadBalance(addr1, addr2)
-		broadcastForLoadBalance(addr1, addr2)
+		wg.Add(2)
+		go startServerWithRegistry(registryAddr, wg)
+		go startServerWithRegistry(registryAddr, wg)
+		wg.Wait()
+
+		time.Sleep(time.Second)
+		callWithRegistry(registryAddr)
+		broadcastWithRegistry(registryAddr)
 	}
 }
 
@@ -188,6 +231,7 @@ func foo(ctx context.Context, xc *client.XClient, typ, serviceMethod string, arg
 
 // use a load balance client
 func callForLoadBalance(addr1, addr2 string) {
+	// 1. 客户端已知所有服务器地址，创建一个 MultiServerDiscovery 实例用来管理服务器地址
 	d := discovery.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
 	xc := client.NewXClient(d, discovery.RandomSelect, nil)
 	defer func() {
@@ -207,11 +251,49 @@ func callForLoadBalance(addr1, addr2 string) {
 
 // use a load balance client
 func broadcastForLoadBalance(addr1, addr2 string) {
+	// 1. 客户端已知所有服务器地址，创建一个 MultiServerDiscovery 实例用来管理服务器地址
 	d := discovery.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
 	xc := client.NewXClient(d, discovery.RandomSelect, nil)
 	defer func() {
 		_ = xc.Close()
 	}()
+
+	var wg sync.WaitGroup
+	for i := range 5 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			foo(context.Background(), xc, "broadcast", "Foo.Sum", &Args{Num1: i, Num2: i * i})
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+			defer cancel()
+			foo(ctx, xc, "broadcast", "Foo.Sleep", &Args{Num1: i, Num2: i * i})
+		}(i)
+	}
+	wg.Wait()
+}
+
+func callWithRegistry(registryAddr string) {
+	// 1. 客户端已知注册中心地址，创建一个 RegistryDiscovery 实例用来管理服务器地址
+	d := discovery.NewRegistryDiscovery(registryAddr, 0)
+	xc := client.NewXClient(d, discovery.RandomSelect, nil)
+	defer func() { _ = xc.Close() }()
+
+	var wg sync.WaitGroup
+	for i := range 5 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			foo(context.Background(), xc, "call", "Foo.Sum", &Args{Num1: i, Num2: i * i})
+		}(i)
+	}
+	wg.Wait()
+}
+
+func broadcastWithRegistry(registryAddr string) {
+	// 1. 客户端已知注册中心地址，创建一个 RegistryDiscovery 实例用来管理服务器地址
+	d := discovery.NewRegistryDiscovery(registryAddr, 0)
+	xc := client.NewXClient(d, discovery.RandomSelect, nil)
+	defer func() { _ = xc.Close() }()
 
 	var wg sync.WaitGroup
 	for i := range 5 {

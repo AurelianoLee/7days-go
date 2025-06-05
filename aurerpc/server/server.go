@@ -74,7 +74,7 @@ func (server *Server) Accept(lis net.Listener) {
 	for {
 		conn, err := lis.Accept()
 		if err != nil {
-			log.Println("rpc server: accept error:", err)
+			log.Println("[RPC server]: accept error:", err)
 			return
 		}
 		go server.ServeConn(conn)
@@ -100,22 +100,22 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 	defer func() { _ = conn.Close() }()
 	var opt Option
 	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
-		log.Println("rpc server: receive options error:", err)
+		log.Println("[RPC server]: receive options error:", err)
 		return
 	}
 
 	if opt.MagicNumber != MagicNumber {
-		log.Printf("rpc server: invalid magic number: %x", opt.MagicNumber)
+		log.Printf("[RPC server]: invalid magic number: %x", opt.MagicNumber)
 		return
 	}
 	f := codec.NewCodecFuncMap[opt.CodecType]
 	if f == nil {
-		log.Printf("rpc server: invalid codec type %s", opt.CodecType)
+		log.Printf("[RPC server]: invalid codec type %s", opt.CodecType)
 		return
 	}
 	// 第二次握手
 	if err := json.NewEncoder(conn).Encode(&opt); err != nil {
-		log.Println("rpc server: send options error: ", err)
+		log.Println("[RPC server]: send options error: ", err)
 		return
 	}
 	// 解析 opt 无误后，
@@ -164,7 +164,7 @@ func (server *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
 	var h codec.Header
 	if err := cc.ReadHeader(&h); err != nil {
 		if err != io.EOF && err != io.ErrUnexpectedEOF {
-			log.Printf("rpc server: read header error: %s, and header is %v", err, h)
+			log.Printf("[RPC Server]: read header error: %s, and header is %v", err, h)
 		}
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (server *Server) readRequest(cc codec.Codec) (*request, error) {
 	// newArgv 只是创建了一个空的容器，定义了参数的结构
 	// 真正的数据填充是由 ReadBody 方法完成的，而 ReadBody 的数据来源是网络连接 conn
 	if err = cc.ReadBody(argvi); err != nil {
-		log.Println("rpc server: read request argv err:", err)
+		log.Println("[RPC server]: read request argv err:", err)
 	}
 	return req, nil
 }
@@ -201,7 +201,7 @@ func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body any, se
 	sending.Lock()
 	defer sending.Unlock()
 	if err := cc.Write(h, body); err != nil {
-		log.Println("rpc server: write response error:", err)
+		log.Println("[RPC server]: write response error:", err)
 	}
 }
 
@@ -232,7 +232,7 @@ func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.
 	select {
 	case <-time.After(timeout):
 		// TODO: 超时的情况下，上面新开的协程如果继续写入了called和sent，会导致这两个channel阻塞
-		req.h.Error = fmt.Sprintf("rpc server: request handle timeout: expect within %s", timeout)
+		req.h.Error = fmt.Sprintf("[RPC server]: request handle timeout: expect within %s", timeout)
 		server.sendResponse(cc, req.h, invalidRequest, sending)
 	case <-called:
 		<-sent
@@ -258,7 +258,7 @@ func (server *Server) findService(serviceMethod string) (svc *service, mType *Me
 	// 分割服务名和方法名
 	dot := strings.LastIndex(serviceMethod, ".")
 	if dot < 0 {
-		err = errors.New("rpc server: service/method request ill-formed: " + serviceMethod)
+		err = errors.New("[RPC server]: service/method request ill-formed: " + serviceMethod)
 		return
 	}
 	serviceName, methodName := serviceMethod[:dot], serviceMethod[dot+1:]
@@ -266,13 +266,13 @@ func (server *Server) findService(serviceMethod string) (svc *service, mType *Me
 	// 先在 serviceMap 中找到对应的 service 实例，再从 service 实例的 method 中，找到对应的 methodType
 	svci, ok := server.serviceMap.Load(serviceName)
 	if !ok {
-		err = errors.New("rpc server: can't find service " + serviceName)
+		err = errors.New("[RPC server]: can't find service " + serviceName)
 		return
 	}
 	svc = svci.(*service)
 	mType = svc.method[methodName]
 	if mType == nil {
-		err = errors.New("rpc server: can't find method " + methodName)
+		err = errors.New("[RPC server]: can't find method " + methodName)
 	}
 	return
 }
