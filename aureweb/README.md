@@ -46,3 +46,22 @@ Engine实现的 ServeHTTP 方法的作用就是，解析请求的路径，查找
 `Context` 随着每一个请求的出现而产生，请求的结束而销毁，和当前请求强相关的信息都应该由`context`承载。
 设计 `Context` 结构，扩展性和复杂性留在了内部，对外简化了接口。
 路由的处理函数，以及将要实现的中间件，参数都统一使用 `Context` 实例。
+
+## Router 路由
+
+将路由相关的方法和结构提取出来，放到一个新的文件中，方便下一次对router的功能进行增强，例如提供动态路由的支持。
+
+## Conclusion 
+
+context 封装 `req & resp`，同时暴露常用的属性，对从`req`提取参数的方法进行封装，快速构建`resp`的方法进行封装。
+router 处理路由的 handle，同时为之后扩展动态路由提供方便。
+
+## Test
+
+```bash
+$ curl -i http://localhost:9999/
+
+$ curl "http://localhost:9999/hello?name=geektutu"
+
+$ curl "http://localhost:9999/login" -X POST -d 'username=geektutu&password=1234'
+```
