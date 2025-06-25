@@ -61,11 +61,11 @@ router 处理路由的 handle，同时为之后扩展动态路由提供方便。
 ### Test
 
 ```bash
-$ curl -i http://localhost:9999/
+curl -i http://localhost:9999/
 
-$ curl "http://localhost:9999/hello?name=geektutu"
+curl "http://localhost:9999/hello?name=geektutu"
 
-$ curl "http://localhost:9999/login" -X POST -d 'username=geektutu&password=1234'
+curl "http://localhost:9999/login" -X POST -d 'username=geektutu&password=1234'
 ```
 
 ## Day3 Router 动态路由
@@ -92,3 +92,9 @@ HTTP请求的路径恰好是由`/`分隔的多段构成的，因此，每一段�
 例如`/p/go/doc`匹配到`/p/:lang/doc`，解析结果为`{lang: "go"}`，`/static/css/geektutu.css`匹配到`/static/*filepath`，解析结果为`{filepath: "css/geektutu.css"}`。
 
 在`HandlerFunc`中，希望能够访问到解析的参数，因此，需要对Context对象增加一个属性和方法，来提供对路由参数的访问。在路由解析后，我们会得到一个`params`，把这个`params`存放到`Context`中，通过`c.Param("lang")`的方式可以获取到对应的值。
+
+```bash
+curl "http://localhost:9999/hello/geektutu"
+
+curl "http://localhost:9999/assets/css/file.css"
+```
