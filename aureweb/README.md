@@ -98,3 +98,38 @@ curl "http://localhost:9999/hello/geektutu"
 
 curl "http://localhost:9999/assets/css/file.css"
 ```
+
+## Day4 Group 分组控制
+
+在真实的业务中，往往是某一组路由需要相似的处理，例如：
+
+- 以`/post`开头的路由匿名可访问。
+- 以`/admin`开头的路由需要鉴权。
+- 以`/api`开头的路由是`RESTFul`接口，可以对接第三方平台，需要三方平台鉴权。
+
+大部分情况下的路由分组，是以相同的前缀来区分的。因此这里的分组控制是根据前缀来区分的，同时还支持分组的嵌套。
+作用在父分组上的中间件，也会作用在子分组上，子分组还可以应用自己特有的中间件。
+
+中间件可以给框架提供无限的扩展能力，应用在分组上，可以使分组控制的收益更加明显。
+例如`/admin`分组可以应用鉴权中间件，`/`分组可以应用日志中间件，`/`默认是最顶层的分组，也就意味着给所有的路由添加了记录日志的能力。
+
+### 分组嵌套
+
+一个Group对象需要具备哪些属性呢？首先是前缀`prefix`，比如`/`，`/api`。
+要支持分组嵌套，需要知道该`Group`的父亲是谁。
+中间件是应用在分组上的，还需要记录存储在该分组上的中间件。
+
+设计`RouterGroup`，包含`prefix`、`middleware`、`RouterGroup`和`Engine`。将原先的`Engine`改造为嵌入`RouterGroup`，加上`router`和`groups []*RouterGroup`。
+把`addRouter()`、`GET`、`POST`方法放入`RouterGroup`中，添加路径时加上`group`的`prefix`。
+
+```bash
+curl "http://localhost:9999/index"
+
+curl "http://localhost:9999/v1"
+
+curl "http://localhost:9999/v1/hello?name=aure"
+
+curl "http://localhost:9999/v2/hello/aure"
+
+curl "http://localhost:9999/v2/login" -X POST -d 'username=aure&password=1234'
+```
