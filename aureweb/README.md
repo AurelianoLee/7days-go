@@ -133,3 +133,27 @@ curl "http://localhost:9999/v2/hello/aure"
 
 curl "http://localhost:9999/v2/login" -X POST -d 'username=aure&password=1234'
 ```
+
+## Day5 MiddleWare 中间件
+
+中间件就是非业务的技术类组件，但是不太适合由框架统一支持。框架必须有一个插口，允许用户自己定义功能，嵌入到框架中，仿佛这个功能是框架原生支持的一般。
+
+对于中间件而言，有两个关键点：
+
+- 插入点：插入点不能太深，如果插入点太底层，中间件会实现的比较复杂，如果插入点离用户太近，用户不如直接定义一组函数，放在`handlerfunc`中手工调用。
+- 中间件的输入：中间件的输入不宜过多，用户不清楚具体的参数；输入太少，用户的发挥空间有限。
+
+### 中间件设计
+
+中间件的定义与路由映射的 `Handler` 一致，处理的输入是 `Context` 对象。插入点是框架接收到请求初始化 `Context` 对象后，允许用户使用自己定义的中间件做一些额外的处理，以及对 `Context` 进行二次加工。
+通过调用`(*Context).Next()` 函数，中间件可以等待用户自己定义的 `Handler` 处理结束后，再做一些额外的操作，例如计算本次处理所用的时间。
+`c.Next()` 表示执行其他的中间件或 `HandlerFunc`。
+
+`gee.go` 的 `ServeHTTP()` 需要根据前缀将所有的中间件注册到 `(*Context).handler[]` 中。
+`router.go`里的 `handle` 需要将这个路由注册的 `HandlerFunc` 注册到 `(*Context).handler[]` 中。
+
+```bash
+curl http://localhost:9999/
+
+curl http://localhost:9999/v2/hello/geektutu
+```
