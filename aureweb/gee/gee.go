@@ -1,8 +1,10 @@
 package gee
 
 import (
+	"html/template"
 	"log"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -20,6 +22,9 @@ type Engine struct {
 	*RouterGroup
 	router *router
 	groups []*RouterGroup
+	// for http render
+	htmlTemplates *template.Template
+	funcMap       template.FuncMap
 }
 
 type RouterGroup struct {
@@ -83,10 +88,48 @@ func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
 	group.middlewares = append(group.middlewares, middlewares...)
 }
 
+func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {
+	// 将相对路径转换为绝对路径
+	// 例如：/assets/*filepath -> ~/go/src/aureweb/static/*filepath
+	absolutePath := path.Join(group.prefix, relativePath)
+	// 创建一个文件服务器，这个文件服务器会处理请求，并返回文件内容
+	// 例如：~/go/src/aureweb/static/*filepath -> ~/go/src/aureweb/static/file1.txt
+	fileServer := http.StripPrefix(absolutePath, http.FileServer(fs))
+	return func(c *Context) {
+		file := c.Param("filepath")
+		if _, err := fs.Open(file); err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		fileServer.ServeHTTP(c.Writer, c.Req)
+	}
+}
+
+// serve static files
+func (group *RouterGroup) Static(relativePath string, root string) {
+	handler := group.createStaticHandler(relativePath, http.Dir(root))
+	urlPattern := path.Join(relativePath, "/*filepath")
+	group.GET(urlPattern, handler)
+}
+
+func (engine *Engine) SetFuncMap(funcMap template.FuncMap) {
+	engine.funcMap = funcMap
+}
+
+func (engine *Engine) LoadHTMLGlob(pattern string) {
+	// template.New("") 创建一个新的、名字为空的模板，这个对象是所有模板的根节点
+	// (*Template).Funcs() 给模板引擎注册一个自定义的模板函数，里面可以存放自定义的Go函数，这些函数可以在模板文件中直接调用
+	// 例如注册一个 `FormatAsDate` 的函数，在模板文件中可以直接使用 {{ .now | FormatAsDate }} 这样的方法调用
+	// (*Template).ParseGlob() 批量解析模板文件，这些文件的扩展名必须是 `.tmpl`
+	// 这些模板文件会被解析成一个树形结构，每个模板文件都是一个节点，这些节点会被存储在 `engine.htmlTemplates` 中
+	engine.htmlTemplates = template.Must(template.New("").Funcs(engine.funcMap).ParseGlob(pattern))
+}
+
 func (engine *Engine) Run(addr string) (err error) {
 	return http.ListenAndServe(addr, engine)
 }
 
+// w & req 是标准库中 HTTP 服务器在接收到请求时自动创建并传入的
 func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var middlewares []HandlerFunc
 	for _, group := range engine.groups {
@@ -96,5 +139,7 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	c := newContext(w, req)
 	c.handlers = middlewares
+	// day6 template
+	c.engine = engine
 	engine.router.handle(c)
 }

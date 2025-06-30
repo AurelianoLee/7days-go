@@ -157,3 +157,7 @@ curl http://localhost:9999/
 
 curl http://localhost:9999/v2/hello/geektutu
 ```
+
+## Day6 Template 模板
+
+实现前后端分离。
