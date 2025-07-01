@@ -10,8 +10,8 @@ import (
 )
 
 func main() {
-	// day 6 template
-	httpForTemplate()
+	// day 7 panic recovery
+	httpForPanicRecovery()
 }
 
 // ------------- day 1 http server ----------------------
@@ -172,6 +172,17 @@ func httpForTemplate() {
 			"title": "gee",
 			"now":   time.Date(2019, 8, 17, 0, 0, 0, 0, time.UTC),
 		})
+	})
+	r.Run(":9999")
+}
+
+func httpForPanicRecovery() {
+	r := gee.Default()
+	r.GET("/", func(c *gee.Context) {
+		c.String(http.StatusOK, "index page")
+	})
+	r.GET("/panic", func(c *gee.Context) {
+		panic("panic page panic")
 	})
 	r.Run(":9999")
 }

@@ -143,3 +143,9 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c.engine = engine
 	engine.router.handle(c)
 }
+
+func Default() *Engine {
+	engine := New()
+	engine.Use(Logger(), Recovery())
+	return engine
+}

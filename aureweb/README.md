@@ -165,6 +165,61 @@ curl http://localhost:9999/v2/hello/geektutu
 采用 Go 标准库自带的 `template` 库实现对html模板的解析。方便进行前后端分离。
 
 Go 标准库 `template` 库使用指南：
+
 - [text/template](https://pkg.go.dev/text/template)
 - [html/template](https://pkg.go.dev/html/template)
 - [go-by-example](https://gobyexample.com/text-templates)
+
+## Day7 Panic 错误处理
+
+对于一个 Web 框架，可能会有各种情况发生，例如用户输入不正确的参数、触发了某些异常、数组越界、空指针等。
+如果因为这些原因导致系统宕机，是不可接受的。因此需要错误处理机制。
+
+可以使用中间件来支持框架的错误处理。
+
+中间件的设计就是在 `routerHandler` 之前和之后插入可以运行的函数，在所有的函数之前插入捕获函数。
+
+```go
+defer func() {
+    if err := recover(); err != nil {
+        //...
+    }
+}()
+
+c.Next()
+```
+
+在`trace()`中使用了 `var pcs [32]uintptr n := runtime.Callers(3, pcs[:])` 的写法。为什么不直接使用切片语法？
+
+```go
+// 当前代码：栈分配，零GC压力
+var pcs [32]uintptr
+n := runtime.Callers(3, pcs[:])
+
+// 替代方案：堆分配，需要GC
+pcs := make([]uintptr, 32)
+n := runtime.Callers(3, pcs)
+```
+
+1. 内存分配优化
+2. 性能优势
+   1. 栈分配：数组在栈上分配，分配和释放都是零成本
+   2. 避免GC
+   3. 更好的缓存局部性：栈内存通常有更好的缓存命中率
+3. Go语言处理固定大小缓冲区的标准模式
+    ```go
+    var buf [1024]byte
+    n, err := reader.Read(buf[:])
+
+    var key [32]byte
+    copy(key[:], data)
+    ```
+4. 性能测试
+
+```bash
+goos: linux
+goarch: amd64
+cpu: AMD Ryzen 7 7840H with Radeon 780M Graphics    
+BenchmarkArray-16        2193489               516.3 ns/op            88 B/op          8 allocs/op
+BenchmarkSlice-16        2274103               514.8 ns/op            88 B/op          8 allocs/op
+```
