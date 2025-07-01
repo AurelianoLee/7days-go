@@ -161,3 +161,10 @@ curl http://localhost:9999/v2/hello/geektutu
 ## Day6 Template 模板
 
 实现前后端分离。
+
+采用 Go 标准库自带的 `template` 库实现对html模板的解析。方便进行前后端分离。
+
+Go 标准库 `template` 库使用指南：
+- [text/template](https://pkg.go.dev/text/template)
+- [html/template](https://pkg.go.dev/html/template)
+- [go-by-example](https://gobyexample.com/text-templates)

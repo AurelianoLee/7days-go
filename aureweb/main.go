@@ -10,9 +10,14 @@ import (
 )
 
 func main() {
-	// r := gee.New()
+	// day 6 template
+	httpForTemplate()
+}
 
-	// day 1 add http server
+// ------------- day 1 http server ----------------------
+
+func httpForHttpServer() {
+	// r := gee.New()
 	// r.GET("/", func(w http.ResponseWriter, req *http.Request) {
 	// 	fmt.Fprintf(w, "URL.Path = %q\n", req.URL.Path)
 	// })
@@ -22,87 +27,115 @@ func main() {
 	// 		fmt.Fprintf(w, "Header[%q] = %q\n", k, v)
 	// 	}
 	// })
-
-	// day 2 add context and router
-	// r.GET("/", func(c *gee.Context) {
-	// 	c.HTML(http.StatusOK, "<h1>Hello Gee</h1>")
-	// })
-
-	// r.GET("/hello", func(c *gee.Context) {
-	// 	c.String(http.StatusOK, "hello %s, you're at %s\n", c.Query("name"), c.Path)
-	// })
-
-	// r.POST("/login", func(c *gee.Context) {
-	// 	c.JSON(http.StatusOK, gee.H{
-	// 		"username": c.PostForm("username"),
-	// 		"password": c.PostForm("password"),
-	// 	})
-	// })
-
-	// day 3 add router and params
-	// r.GET("/", func(c *gee.Context) {
-	// 	c.HTML(http.StatusOK, "<h1>Hello Gee</h1>")
-	// })
-	// r.GET("/hello", func(c *gee.Context) {
-	// 	c.String(http.StatusOK, "hello %s, you're at %s\n", c.Query("name"), c.Path)
-	// })
-	// r.GET("/hello/:name", func(c *gee.Context) {
-	// 	c.String(http.StatusOK, "hello %s, you're at %s\n", c.Param("name"), c.Path)
-	// })
-	// r.GET("/assets/*filepath", func(c *gee.Context) {
-	// 	c.JSON(http.StatusOK, gee.H{"filepath": c.Param("filepath")})
-	// })
-
-	// day 4 group router
-	// r.GET("/index", func(c *gee.Context) {
-	// 	c.HTML(http.StatusOK, "<h1>Index Page</h1>")
-	// })
-	// v1 := r.Group("/v1")
-	// {
-	// 	v1.GET("/", func(c *gee.Context) {
-	// 		c.HTML(http.StatusOK, "<h1>Hello Gee</h1>")
-	// 	})
-	// 	v1.GET("/hello", func(c *gee.Context) {
-	// 		// e.g. /v1/hello?name=aure
-	// 		c.String(http.StatusOK, "hello %s, you're at %s\n", c.Query("name"), c.Path)
-	// 	})
-	// }
-
-	// v2 := r.Group("/v2")
-	// {
-	// 	v2.GET("/hello/:name", func(c *gee.Context) {
-	// 		// e.g. /v2/hello/aure
-	// 		c.String(http.StatusOK, "hello %s, you're at %s\n", c.Param("name"), c.Path)
-	// 	})
-	// 	v2.POST("/login", func(c *gee.Context) {
-	// 		c.JSON(http.StatusOK, gee.H{
-	// 			"username": c.PostForm("username"),
-	// 			"password": c.PostForm("password"),
-	// 		})
-	// 	})
-	// }
-
-	// day 5 middleware
-	// r.Use(gee.Logger())
-	// r.GET("/", func(c *gee.Context) {
-	// 	c.HTML(http.StatusOK, "<h1>Hello Gee</h1>")
-	// })
-
-	// v2 := r.Group("/v2")
-	// v2.Use(onlyForV2())
-	// {
-	// 	v2.GET("/hello/:name", func(c *gee.Context) {
-	// 		c.String(http.StatusOK, "hello %s, you're at %s\n", c.Param("name"), c.Path)
-	// 	})
-	// }
-
 	// r.Run(":9999")
+}
 
-	// day 6 template
-	httpForTemplate()
+// ------------- day 2 context and router ----------------------
+
+func httpForContextAndRouter() {
+	r := gee.New()
+	r.GET("/", func(c *gee.Context) {
+		c.HTML(http.StatusOK, "index.tmpl", nil)
+	})
+
+	r.GET("/hello", func(c *gee.Context) {
+		c.String(http.StatusOK, "hello %s, you're at %s\n", c.Query("name"), c.Path)
+	})
+
+	r.POST("/login", func(c *gee.Context) {
+		c.JSON(http.StatusOK, gee.H{
+			"username": c.PostForm("username"),
+			"password": c.PostForm("password"),
+		})
+	})
+	r.Run(":9999")
+}
+
+// ------------- day 3 router and params ----------------------
+
+func httpForRouterAndParams() {
+	r := gee.New()
+	r.GET("/", func(c *gee.Context) {
+		c.HTML(http.StatusOK, "index.tmpl", nil)
+	})
+	r.GET("/hello", func(c *gee.Context) {
+		c.String(http.StatusOK, "hello %s, you're at %s\n", c.Query("name"), c.Path)
+	})
+	r.GET("/hello/:name", func(c *gee.Context) {
+		c.String(http.StatusOK, "hello %s, you're at %s\n", c.Param("name"), c.Path)
+	})
+	r.GET("/assets/*filepath", func(c *gee.Context) {
+		c.JSON(http.StatusOK, gee.H{"filepath": c.Param("filepath")})
+	})
+	r.Run(":9999")
+}
+
+// ------------- day 4 group router ----------------------
+
+func httpForGroupRouter() {
+	r := gee.New()
+	r.GET("/index", func(c *gee.Context) {
+		c.HTML(http.StatusOK, "index.tmpl", nil)
+	})
+	v1 := r.Group("/v1")
+	{
+		v1.GET("/", func(c *gee.Context) {
+			c.HTML(http.StatusOK, "css.tmpl", nil)
+		})
+		v1.GET("/hello", func(c *gee.Context) {
+			// e.g. /v1/hello?name=aure
+			c.String(http.StatusOK, "hello %s, you're at %s\n", c.Query("name"), c.Path)
+		})
+	}
+
+	v2 := r.Group("/v2")
+	{
+		v2.GET("/hello/:name", func(c *gee.Context) {
+			// e.g. /v2/hello/aure
+			c.String(http.StatusOK, "hello %s, you're at %s\n", c.Param("name"), c.Path)
+		})
+		v2.POST("/login", func(c *gee.Context) {
+			c.JSON(http.StatusOK, gee.H{
+				"username": c.PostForm("username"),
+				"password": c.PostForm("password"),
+			})
+		})
+	}
+	r.Run(":9999")
+}
+
+// ------------- day 5 middleware ----------------------
+
+func httpForMiddleware() {
+	r := gee.New()
+	r.Use(gee.Logger())
+	r.GET("/", func(c *gee.Context) {
+		c.HTML(http.StatusOK, "css.tmpl", nil)
+	})
+
+	v2 := r.Group("/v2")
+	v2.Use(onlyForV2())
+	{
+		v2.GET("/hello/:name", func(c *gee.Context) {
+			c.String(http.StatusOK, "hello %s, you're at %s\n", c.Param("name"), c.Path)
+		})
+	}
+	r.Run(":9999")
+}
+
+func onlyForV2() gee.HandlerFunc {
+	return func(c *gee.Context) {
+		// 先打印请求路径
+		t := time.Now()
+		// c.Fail(500, "Internal Server Error")
+		c.Next()
+		// 再执行中间件
+		log.Printf("[%d] %s in %v for group v2", c.StatusCode, c.Req.RequestURI, time.Since(t))
+	}
 }
 
 // ------------- day 6 template ----------------------
+
 type student struct {
 	Name string
 	Age  int8
@@ -141,15 +174,4 @@ func httpForTemplate() {
 		})
 	})
 	r.Run(":9999")
-}
-
-func onlyForV2() gee.HandlerFunc {
-	return func(c *gee.Context) {
-		// 先打印请求路径
-		t := time.Now()
-		// c.Fail(500, "Internal Server Error")
-		c.Next()
-		// 再执行中间件
-		log.Printf("[%d] %s in %v for group v2", c.StatusCode, c.Req.RequestURI, time.Since(t))
-	}
 }
